@@ -201,10 +201,7 @@ def test_llm_responses_configures_and_returns_logprobs(mock_responses_call):
                     {
                         "token": "ok",
                         "logprob": -0.2,
-                        "bytes": [111, 107],
-                        "top_logprobs": [
-                            {"token": "ok", "logprob": -0.2, "bytes": [111, 107]}
-                        ],
+                        "top_logprobs": [{"token": "ok", "logprob": -0.2}],
                     }
                 ],
             )

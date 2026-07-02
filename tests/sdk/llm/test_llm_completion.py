@@ -176,10 +176,9 @@ def test_llm_completion_configures_and_returns_logprobs(mock_completion):
             {
                 "token": "A",
                 "logprob": -0.1,
-                "bytes": [65],
                 "top_logprobs": [
-                    {"token": "A", "logprob": -0.1, "bytes": [65]},
-                    {"token": "B", "logprob": -2.0, "bytes": [66]},
+                    {"token": "A", "logprob": -0.1},
+                    {"token": "B", "logprob": -2.0},
                 ],
             }
         ]

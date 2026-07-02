@@ -36,7 +36,6 @@ class LLMTopLogprob(BaseModel):
 
     token: str
     logprob: float
-    bytes: list[int] | None = None
 
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
 
@@ -49,7 +48,6 @@ class LLMTopLogprob(BaseModel):
         return cls(
             token=str(token),
             logprob=float(logprob),
-            bytes=_get_logprob_value(raw, "bytes"),
         )
 
 
@@ -58,7 +56,6 @@ class LLMTokenLogprob(BaseModel):
 
     token: str
     logprob: float
-    bytes: list[int] | None = None
     top_logprobs: list[LLMTopLogprob] = Field(default_factory=list)
 
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
@@ -78,7 +75,6 @@ class LLMTokenLogprob(BaseModel):
         return cls(
             token=str(token),
             logprob=float(logprob),
-            bytes=_get_logprob_value(raw, "bytes"),
             top_logprobs=top_logprobs,
         )
 

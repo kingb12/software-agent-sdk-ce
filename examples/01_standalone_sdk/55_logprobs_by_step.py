@@ -79,7 +79,7 @@ with tempfile.TemporaryDirectory() as workspace:
         agent=agent,
         workspace=workspace_path,
         max_iteration_per_run=2,
-        persistence_dir=Path(".agent_tmp/logprobs_example"),
+        persistence_dir=Path(".agent_tmp/logprobs_example/no_bytes"),
     )
 
     conversation.send_message(
