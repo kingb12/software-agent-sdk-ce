@@ -167,6 +167,44 @@ def test_llm_completion_basic(mock_completion):
     assert not llm.should_mock_tool_calls(cc_tools)
 
 
+@patch("openhands.sdk.llm.llm.litellm_completion")
+def test_llm_completion_configures_and_returns_logprobs(mock_completion):
+    """Configured logprobs flow into LiteLLM and back through LLMResponse."""
+    mock_response = create_mock_response("A")
+    mock_response["choices"][0]["logprobs"] = {
+        "content": [
+            {
+                "token": "A",
+                "logprob": -0.1,
+                "bytes": [65],
+                "top_logprobs": [
+                    {"token": "A", "logprob": -0.1, "bytes": [65]},
+                    {"token": "B", "logprob": -2.0, "bytes": [66]},
+                ],
+            }
+        ]
+    }
+    mock_completion.return_value = mock_response
+
+    llm = LLM(
+        usage_id="test-llm",
+        model="gpt-4o",
+        api_key=SecretStr("test_key"),
+        logprobs=True,
+        top_logprobs=2,
+    )
+
+    messages = [Message(role="user", content=[TextContent(text="Hello")])]
+    response = llm.completion(messages=messages)
+
+    call_kwargs = mock_completion.call_args.kwargs
+    assert call_kwargs["logprobs"] is True
+    assert call_kwargs["top_logprobs"] == 2
+    assert response.logprobs is not None
+    assert response.logprobs.content[0].token == "A"
+    assert response.logprobs.content[0].top_logprobs[1].token == "B"
+
+
 def test_llm_streaming_not_supported(default_config):
     """Test that streaming requires an on_token callback."""
     llm = default_config

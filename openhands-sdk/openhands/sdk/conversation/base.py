@@ -41,8 +41,10 @@ def _conversation_tag_attributes(
 
 if TYPE_CHECKING:
     from openhands.sdk.agent.base import AgentBase
+    from openhands.sdk.conversation.llm_response_metadata import LLMResponseMetadata
     from openhands.sdk.conversation.state import ConversationExecutionStatus
     from openhands.sdk.hooks import HookConfig
+    from openhands.sdk.llm.llm_response import LLMLogprobs, LLMResponse
 
 
 CallbackType = TypeVar(
@@ -116,6 +118,26 @@ class ConversationStateProtocol(Protocol):
     @property
     def hook_config(self) -> "HookConfig | None":
         """The hook configuration for this conversation."""
+        ...
+
+    def save_llm_response_metadata(self, llm_response: "LLMResponse") -> None:
+        """Persist sidecar metadata for an LLM response."""
+        ...
+
+    def load_llm_response_metadata(
+        self, llm_response_id: str
+    ) -> "LLMResponseMetadata | None":
+        """Load persisted sidecar metadata for one LLM response."""
+        ...
+
+    def load_llm_response_metadata_map(
+        self,
+    ) -> dict[str, "LLMResponseMetadata"]:
+        """Load persisted sidecar metadata keyed by LLM response id."""
+        ...
+
+    def load_llm_logprobs_by_response_id(self) -> dict[str, "LLMLogprobs"]:
+        """Load persisted LLM logprobs keyed by LLM response id."""
         ...
 
 

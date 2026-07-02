@@ -94,7 +94,7 @@ from openhands.sdk.llm.exceptions import (
 )
 
 # OpenHands utilities
-from openhands.sdk.llm.llm_response import LLMResponse
+from openhands.sdk.llm.llm_response import LLMLogprobs, LLMResponse
 from openhands.sdk.llm.message import (
     Message,
 )
@@ -350,6 +350,21 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
         ),
     )
     top_k: float | None = Field(default=None, ge=0)
+    logprobs: bool = Field(
+        default=False,
+        description=(
+            "Request output token log probabilities from models that support them."
+        ),
+    )
+    top_logprobs: int | None = Field(
+        default=None,
+        ge=0,
+        le=20,
+        description=(
+            "Number of most likely tokens to include at each generated token "
+            "position when log probabilities are requested."
+        ),
+    )
 
     max_input_tokens: int | None = Field(
         default=None,
@@ -901,10 +916,16 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
         """Convert a raw :class:`ModelResponse` into an :class:`LLMResponse`."""
         first_choice = resp["choices"][0]
         message = Message.from_llm_chat_message(first_choice["message"])
+        choice_logprobs = (
+            first_choice.get("logprobs")
+            if isinstance(first_choice, dict)
+            else getattr(first_choice, "logprobs", None)
+        )
         return LLMResponse(
             message=message,
             metrics=self.metrics.get_snapshot(),
             raw_response=resp,
+            logprobs=LLMLogprobs.from_chat_logprobs(choice_logprobs),
         )
 
     def _build_responses_result(self, resp: ResponsesAPIResponse) -> LLMResponse:
@@ -915,7 +936,47 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
             message=message,
             metrics=self.metrics.get_snapshot(),
             raw_response=resp,
+            logprobs=LLMLogprobs.from_responses_output(output_seq),
         )
+
+    def _apply_chat_logprob_options(
+        self, call_kwargs: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Apply configured Chat Completions logprob defaults."""
+        out = dict(call_kwargs)
+        logprobs_disabled = out.get("logprobs") is False
+        if self.top_logprobs is not None and "top_logprobs" not in out:
+            if not logprobs_disabled:
+                out["top_logprobs"] = self.top_logprobs
+
+        if "logprobs" not in out and (
+            self.logprobs or self.top_logprobs is not None or "top_logprobs" in out
+        ):
+            out["logprobs"] = True
+
+        return out
+
+    def _apply_responses_logprob_options(
+        self, call_kwargs: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Apply configured Responses API logprob defaults."""
+        out = dict(call_kwargs)
+        if self.is_subscription:
+            return out
+
+        logprobs_requested = (
+            self.logprobs or self.top_logprobs is not None or "top_logprobs" in out
+        )
+        if logprobs_requested:
+            include = list(out.get("include") or [])
+            if "message.output_text.logprobs" not in include:
+                include.append("message.output_text.logprobs")
+            out["include"] = include
+
+        if self.top_logprobs is not None and "top_logprobs" not in out:
+            out["top_logprobs"] = self.top_logprobs
+
+        return out
 
     def _build_responses_call_kwargs(
         self,
@@ -1139,6 +1200,7 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
         call_kwargs = select_chat_options(
             self, kwargs, has_tools=has_tools_flag, call_context=call_context
         )
+        call_kwargs = self._apply_chat_logprob_options(call_kwargs)
 
         # 3a) joint input/output budget clamp (e.g. Bedrock-Anthropic)
         call_kwargs = self._clamp_max_tokens_for_joint_budget(
@@ -1282,6 +1344,7 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
         call_kwargs = select_responses_options(
             self, kwargs, include=include, store=store, call_context=call_context
         )
+        call_kwargs = self._apply_responses_logprob_options(call_kwargs)
 
         # Request context for telemetry (always include context_window for metrics)
         # Always pass context_window so metrics are tracked even when

@@ -772,6 +772,7 @@ class Agent(CriticMixin, ResponseDispatchMixin, AgentBase):
             raise e
 
         # LLMResponse already contains the converted message and metrics snapshot
+        state.save_llm_response_metadata(llm_response)
         message: Message = llm_response.message
         response_type = classify_response(message)
 
@@ -962,6 +963,7 @@ class Agent(CriticMixin, ResponseDispatchMixin, AgentBase):
             self._log_context_window_exceeded_warning()
             raise e
 
+        state.save_llm_response_metadata(llm_response)
         message: Message = llm_response.message
         response_type = classify_response(message)
 

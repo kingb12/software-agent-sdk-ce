@@ -7,14 +7,22 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Self
 
-from pydantic import Field, PrivateAttr
+from pydantic import Field, PrivateAttr, ValidationError
 
 from openhands.sdk.agent.base import AgentBase
 from openhands.sdk.context.view import View
 from openhands.sdk.conversation.conversation_stats import ConversationStats
 from openhands.sdk.conversation.event_store import ROOT_PARENT_ID, EventLog
 from openhands.sdk.conversation.fifo_lock import FIFOLock
-from openhands.sdk.conversation.persistence_const import BASE_STATE, EVENTS_DIR
+from openhands.sdk.conversation.llm_response_metadata import (
+    LLMResponseMetadata,
+    llm_response_metadata_path,
+)
+from openhands.sdk.conversation.persistence_const import (
+    BASE_STATE,
+    EVENTS_DIR,
+    LLM_RESPONSES_DIR,
+)
 from openhands.sdk.conversation.secret_registry import SecretRegistry
 from openhands.sdk.conversation.types import (
     ConversationCallbackType,
@@ -31,6 +39,7 @@ from openhands.sdk.event.base import Event
 from openhands.sdk.event.types import EventID
 from openhands.sdk.hooks import HookConfig
 from openhands.sdk.io import FileStore, InMemoryFileStore, LocalFileStore
+from openhands.sdk.llm.llm_response import LLMLogprobs, LLMResponse
 from openhands.sdk.logger import get_logger
 from openhands.sdk.security.analyzer import SecurityAnalyzerBase
 from openhands.sdk.security.confirmation_policy import (
@@ -417,6 +426,56 @@ class ConversationState(OpenHandsModel):
         else:
             with self._write_guard():
                 fs.write(BASE_STATE, payload)
+
+    def save_llm_response_metadata(self, llm_response: LLMResponse) -> None:
+        if llm_response.logprobs is None:
+            return
+
+        metadata = LLMResponseMetadata(
+            llm_response_id=llm_response.id,
+            logprobs=llm_response.logprobs,
+        )
+        payload = metadata.model_dump_json(exclude_none=True)
+        path = llm_response_metadata_path(llm_response.id)
+        if self._write_guard is None:
+            self._fs.write(path, payload)
+        else:
+            with self._write_guard():
+                self._fs.write(path, payload)
+
+    def load_llm_response_metadata(
+        self, llm_response_id: str
+    ) -> LLMResponseMetadata | None:
+        path = llm_response_metadata_path(llm_response_id)
+        try:
+            payload = self._fs.read(path)
+        except FileNotFoundError:
+            return None
+        return LLMResponseMetadata.model_validate_json(payload)
+
+    def load_llm_response_metadata_map(self) -> dict[str, LLMResponseMetadata]:
+        metadata_by_response_id: dict[str, LLMResponseMetadata] = {}
+        for path in self._fs.list(LLM_RESPONSES_DIR):
+            if path.endswith("/"):
+                continue
+            try:
+                metadata = LLMResponseMetadata.model_validate_json(self._fs.read(path))
+            except (FileNotFoundError, ValidationError):
+                logger.warning(
+                    "Skipping invalid LLM response metadata sidecar: %s",
+                    path,
+                    exc_info=True,
+                )
+                continue
+            metadata_by_response_id[metadata.llm_response_id] = metadata
+        return metadata_by_response_id
+
+    def load_llm_logprobs_by_response_id(self) -> dict[str, LLMLogprobs]:
+        return {
+            response_id: metadata.logprobs
+            for response_id, metadata in self.load_llm_response_metadata_map().items()
+            if metadata.logprobs is not None
+        }
 
     # ===== Factory: open-or-create (no load/save methods needed) =====
     @classmethod

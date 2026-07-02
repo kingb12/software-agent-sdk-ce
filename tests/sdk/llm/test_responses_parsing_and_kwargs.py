@@ -181,6 +181,62 @@ def test_llm_responses_end_to_end(mock_responses_call):
     assert len(llm._telemetry.metrics.token_usages) == 1  # type: ignore[attr-defined]
 
 
+@patch("openhands.sdk.llm.llm.litellm_responses")
+def test_llm_responses_configures_and_returns_logprobs(mock_responses_call):
+    llm = LLM(model="gpt-5-mini", logprobs=True, top_logprobs=2)
+    sys = Message(role="system", content=[TextContent(text="inst")])
+    user = Message(role="user", content=[TextContent(text="hi")])
+
+    msg = ResponseOutputMessage.model_construct(
+        id="m1",
+        type="message",
+        role="assistant",
+        status="completed",
+        content=[
+            ResponseOutputText.model_construct(
+                type="output_text",
+                text="ok",
+                annotations=[],
+                logprobs=[
+                    {
+                        "token": "ok",
+                        "logprob": -0.2,
+                        "bytes": [111, 107],
+                        "top_logprobs": [
+                            {"token": "ok", "logprob": -0.2, "bytes": [111, 107]}
+                        ],
+                    }
+                ],
+            )
+        ],
+    )
+    usage = ResponseAPIUsage(input_tokens=10, output_tokens=5, total_tokens=15)
+    resp = ResponsesAPIResponse(
+        id="r1",
+        created_at=0,
+        output=[msg],
+        parallel_tool_calls=False,
+        tool_choice="auto",
+        top_p=None,
+        tools=[],
+        usage=usage,
+        instructions="inst",
+        status="completed",
+    )
+    mock_responses_call.return_value = resp
+
+    result = llm.responses([sys, user])
+
+    call_kwargs = mock_responses_call.call_args.kwargs
+    assert call_kwargs["include"] == [
+        "reasoning.encrypted_content",
+        "message.output_text.logprobs",
+    ]
+    assert call_kwargs["top_logprobs"] == 2
+    assert result.logprobs is not None
+    assert result.logprobs.content[0].token == "ok"
+
+
 @pytest.mark.parametrize(
     "model",
     [
